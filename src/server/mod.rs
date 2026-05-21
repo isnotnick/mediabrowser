@@ -4,6 +4,7 @@ pub mod templates;
 pub mod assets;
 pub mod hls;
 pub mod filters;
+pub mod screenshot;
 
 use axum::{Router, middleware};
 use tower_http::{services::ServeDir, trace::TraceLayer};

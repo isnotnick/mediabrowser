@@ -1,0 +1,4 @@
+/target
+.app_data/
+media.db
+config.yml

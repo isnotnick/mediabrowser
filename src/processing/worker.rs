@@ -75,7 +75,10 @@ pub async fn start_worker(
 
             match res {
                 Ok(_) => {
-                    let _ = queries::update_thumbnail(&conn, file.id, thumb_path.to_str().unwrap());
+                    //let _ = queries::update_thumbnail(&conn, file.id, thumb_path.to_str().unwrap());
+                    // Replace native path separators with forward slashes for web URLs
+                    let thumb_str = thumb_path.to_str().unwrap().replace("\\", "/");
+                    let _ = queries::update_thumbnail(&conn, file.id, &thumb_str);
                     
                     // If video, try generating VTT only if enabled
                     if is_video && settings.generate_timeline_thumbnails {
@@ -93,7 +96,9 @@ pub async fn start_worker(
                                 duration,
                                 160, // Default sprite tile size
                             ) {
-                                let _ = queries::update_vtt(&conn, file.id, vtt_path.to_str().unwrap());
+                                //let _ = queries::update_vtt(&conn, file.id, vtt_path.to_str().unwrap());
+                                let vtt_str = vtt_path.to_str().unwrap().replace("\\", "/");
+                                let _ = queries::update_vtt(&conn, file.id, &vtt_str);
                             }
                         }
                     }

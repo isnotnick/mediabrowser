@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Rust Media Browser</title>
+    <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+    <header>
+        <h1>Media Browser</h1>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/config">Config</a>
+        </nav>
+    </header>
+    <div class="container">
+        <form action="/" method="get" style="max-width: none; display: flex; gap: 1rem; margin-bottom: 2rem; background: transparent; padding: 0; box-shadow: none;">
+            <input type="text" name="search" placeholder="Search files..." value="{{ search_query }}" style="margin: 0; flex: 1;">
+            <select name="sort" style="padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; background: #fff;" onchange="this.form.submit()">
+                <option value="last_modified_desc" {% if sort_order == "last_modified_desc" %}selected{% endif %}>Newest First</option>
+                <option value="last_modified_asc" {% if sort_order == "last_modified_asc" %}selected{% endif %}>Oldest First</option>
+                <option value="name_asc" {% if sort_order == "name_asc" %}selected{% endif %}>Name (A-Z)</option>
+                <option value="name_desc" {% if sort_order == "name_desc" %}selected{% endif %}>Name (Z-A)</option>
+                <option value="size_desc" {% if sort_order == "size_desc" %}selected{% endif %}>Size (Largest)</option>
+                <option value="size_asc" {% if sort_order == "size_asc" %}selected{% endif %}>Size (Smallest)</option>
+            </select>
+            <button type="submit" style="width: auto; padding: 0.5rem 2rem;">Search</button>
+        </form>
+
+        <div class="grid">
+            {% for file in files %}
+            <div class="card">
+                <a href="/view/{{ file.id }}">
+                    <div class="relative">
+                        {% if file.thumbnail_path.is_some() %}
+                        <img src="/{{ file.thumbnail_path.as_ref().unwrap()|urlencode }}" class="card-image" loading="lazy">
+                        {% else %}
+                        <div class="card-image" style="display:flex;align-items:center;justify-content:center;">No Thumb</div>
+                        {% endif %}
+                        
+                        {% if file.media_type.to_string() == "video" %}
+                        <span class="status-badge" style="left:5px; right:auto;">▶</span>
+                        {% endif %}
+                    </div>
+                    <div class="card-title">{{ file.path }}</div>
+                </a>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</body>
+</html>

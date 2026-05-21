@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Config - Rust Media Browser</title>
+    <link rel="stylesheet" href="/assets/style.css">
+    <meta http-equiv="refresh" content="5">
+</head>
+<body>
+    <header>
+        <h1>Media Browser Config</h1>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/config">Config</a>
+        </nav>
+    </header>
+    <div class="container">
+        <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 300px;">
+                <h3>Worker Status</h3>
+                <div style="background: #fff; padding: 1rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <p>Pending: <strong>{{ worker_state.pending_count }}</strong></p>
+                    <p>Processing: <strong>{{ worker_state.processing_count }}</strong></p>
+                    <p>Completed: <strong>{{ worker_state.completed_count }}</strong></p>
+                    <p>Failed: <strong>{{ worker_state.failed_count }}</strong></p>
+                </div>
+            </div>
+
+            <div style="flex: 1; min-width: 300px;">
+                <h3>Settings</h3>
+                <form action="/config" method="post" style="max-width: none; margin: 0;">
+                    <label>Server Port:</label>
+                    <input type="number" name="server_port" value="{{ settings.server_port }}" required>
+                    
+                    <label>Thumbnail Size:</label>
+                    <input type="number" name="thumbnail_size" value="{{ settings.thumbnail_size }}" required>
+                    
+                    <label>Thumbnail Quality (0-100):</label>
+                    <input type="number" name="thumbnail_quality" value="{{ settings.thumbnail_quality }}" required>
+                    
+                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;">
+                        <input type="checkbox" name="generate_timeline_thumbnails" id="gen_vtt" style="width: auto; margin: 0;" {% if settings.generate_timeline_thumbnails %}checked{% endif %}>
+                        <label for="gen_vtt" style="margin: 0;">Generate video timeline scrubbing thumbnails</label>
+                    </div>
+
+                    <button type="submit">Save Settings</button>
+                    <p style="font-size: 0.8rem; color: #666; margin-top: 1rem;">Note: Changes to Server Port require a restart to take effect.</p>
+                </form>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

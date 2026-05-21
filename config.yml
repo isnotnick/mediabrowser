@@ -1,0 +1,5 @@
+server_port: 8080
+media_directory: ./media
+optional_password: null
+thumbnail_size: 320
+thumbnail_quality: 60

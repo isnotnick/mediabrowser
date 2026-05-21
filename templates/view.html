@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>View - Rust Media Browser</title>
+    <link rel="stylesheet" href="/assets/style.css">
+    <style>
+        .view-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        .media-content {
+            max-width: 100%;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .meta {
+            margin-top: 1rem;
+            background: #fff;
+            padding: 1rem;
+            border-radius: 8px;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Media Browser</h1>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/config">Config</a>
+        </nav>
+    </header>
+    <div class="view-container">
+        {% if file.media_type.to_string() == "image" %}
+            <img src="/media/{{ file.path|urlencode }}" class="media-content">
+        {% else %}
+            <p>Unsupported media type for view.html</p>
+        {% endif %}
+        
+        <div class="meta">
+            <h3>{{ file.path }}</h3>
+            <p>Size: {{ (file.size_bytes / 1048576) }} MB</p>
+            <a href="/media/{{ file.path|urlencode }}" download>Download</a>
+        </div>
+    </div>
+</body>
+</html>

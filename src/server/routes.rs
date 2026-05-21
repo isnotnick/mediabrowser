@@ -16,6 +16,7 @@ use crate::server::AppState;
 use crate::server::templates::{IndexTemplate, LoginTemplate, ConfigTemplate, WorkerStateDto, ViewTemplate, VideoTemplate};
 use crate::db::queries;
 use crate::server::hls;
+use crate::server::screenshot;
 use axum::extract::Query;
 
 pub fn public_routes() -> Router<Arc<AppState>> {
@@ -31,6 +32,7 @@ pub fn protected_routes() -> Router<Arc<AppState>> {
         .route("/hls/{id}/master.m3u8", get(hls::master_playlist))
         .route("/hls/{id}/playlist.m3u8", get(hls::hls_playlist))
         .route("/hls/{id}/{segment}", get(hls::hls_segment))
+        .route("/screenshot/{id}", get(screenshot::screenshot))
 }
 
 #[derive(Deserialize)]

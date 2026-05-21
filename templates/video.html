@@ -33,14 +33,8 @@
             gap: 0.75rem;
             align-items: center;
         }
-        .meta h3 {
-            width: 100%;
-            margin: 0 0 0.25rem;
-        }
-        .meta p {
-            margin: 0;
-            flex: 1;
-        }
+        .meta h3 { width: 100%; margin: 0 0 0.25rem; }
+        .meta p  { margin: 0; flex: 1; }
         .btn {
             display: inline-block;
             padding: 0.4rem 0.9rem;
@@ -53,6 +47,38 @@
             color: inherit;
         }
         .btn:hover { background: #e8e8e8; }
+
+        /* Scrubbing preview bubble */
+        .scrub-preview {
+            position: fixed;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            pointer-events: none;
+            z-index: 9999;
+            transform: translateX(-50%);
+        }
+        .scrub-preview img {
+            width: 160px;
+            height: 90px;
+            object-fit: cover;
+            border-radius: 4px;
+            border: 2px solid rgba(255,255,255,0.85);
+            box-shadow: 0 4px 14px rgba(0,0,0,0.65);
+            background: #111;
+            display: block;
+        }
+        .scrub-preview-time {
+            margin-top: 4px;
+            color: #fff;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.9);
+            background: rgba(0,0,0,0.55);
+            padding: 2px 7px;
+            border-radius: 3px;
+        }
     </style>
 </head>
 <body>
@@ -88,44 +114,120 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            const video = document.querySelector('#player');
+            const video  = document.querySelector('#player');
             const source = video.getElementsByTagName('source')[0].src;
-            let player = null;
+            const fileId = {{ file.id }};
+            let player   = null;
 
             const defaultOptions = {
-                controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen'],
+                controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume',
+                           'captions', 'settings', 'pip', 'airplay', 'fullscreen'],
                 previewThumbnails: {
                     enabled: true,
-                    src: video.querySelector('track') ? video.querySelector('track').src : null
-                }
+                    src: video.querySelector('track') ? video.querySelector('track').src : null,
+                },
             };
 
-            if (Hls.isSupported()) {
-                const hls = new Hls({
-                    maxBufferLength: 30,
-                    maxMaxBufferLength: 60,
+            // ── Scrubbing preview ────────────────────────────────────────────────────
+            // Created once and reused for the lifetime of the page.
+            const preview     = document.createElement('div');
+            preview.className = 'scrub-preview';
+            preview.innerHTML = '<img src="" alt="" /><span class="scrub-preview-time"></span>';
+            document.body.appendChild(preview);
+            const previewImg  = preview.querySelector('img');
+            const previewTime = preview.querySelector('.scrub-preview-time');
+
+            // Round hover position to the nearest SNAP seconds so adjacent pixels
+            // reuse the same cached frame and don't generate redundant requests.
+            const SNAP = 5;
+
+            function fmtTime(s) {
+                const h = Math.floor(s / 3600);
+                const m = Math.floor((s % 3600) / 60);
+                const sec = Math.floor(s % 60);
+                return h > 0
+                    ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`
+                    : `${m}:${String(sec).padStart(2,'0')}`;
+            }
+
+            function setupScrubPreview(plyrPlayer) {
+                plyrPlayer.on('ready', () => {
+                    const bar = document.querySelector('.plyr__progress__container');
+                    if (!bar) return;
+
+                    let debounce = null;
+
+                    bar.addEventListener('mousemove', e => {
+                        const rect     = bar.getBoundingClientRect();
+                        const fraction = Math.max(0, Math.min(1,
+                            (e.clientX - rect.left) / rect.width));
+                        const t = fraction * (plyrPlayer.duration || 0);
+
+                        // Place the bubble centred on the cursor, above the bar.
+                        const halfW = 82; // ~half of 160px img + border
+                        const x = Math.max(halfW,
+                            Math.min(window.innerWidth - halfW, e.clientX));
+                        preview.style.left = `${x}px`;
+                        preview.style.top  = `${rect.top - 110}px`;
+                        preview.style.display = 'flex';
+
+                        previewTime.textContent = fmtTime(t);
+
+                        // Debounce: only fire a new src update 150 ms after the
+                        // cursor stops moving, avoiding a flood of requests.
+                        clearTimeout(debounce);
+                        debounce = setTimeout(() => {
+                            const snapped = Math.round(t / SNAP) * SNAP;
+                            const url = `/screenshot/${fileId}?t=${snapped}`;
+                            if (previewImg.dataset.t !== String(snapped)) {
+                                previewImg.dataset.t = String(snapped);
+                                previewImg.src = url; // browser HTTP cache handles repeats
+                            }
+                        }, 150);
+                    });
+
+                    bar.addEventListener('mouseleave', () => {
+                        preview.style.display = 'none';
+                        clearTimeout(debounce);
+                    });
                 });
+            }
+
+            // ── Player initialisation ────────────────────────────────────────────────
+            if (Hls.isSupported()) {
+                const hls = new Hls({ maxBufferLength: 30, maxMaxBufferLength: 60 });
                 hls.loadSource(source);
                 hls.attachMedia(video);
                 window.hls = hls;
 
-                hls.on(Hls.Events.MANIFEST_PARSED, function () {
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
                     player = new Plyr(video, defaultOptions);
                     window.player = player;
+                    setupScrubPreview(player);
                 });
             } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
                 video.src = source;
                 player = new Plyr(video, defaultOptions);
                 window.player = player;
+                setupScrubPreview(player);
             } else {
-                video.src = "/media/{{ file.path|urlencode }}";
+                video.src = `/media/{{ file.path|urlencode }}`;
                 player = new Plyr(video, defaultOptions);
                 window.player = player;
+                setupScrubPreview(player);
             }
 
+            // ── Screenshot download button ───────────────────────────────────────────
             document.getElementById('screenshot-btn').addEventListener('click', () => {
                 const t = (player ? player.currentTime : video.currentTime) || 0;
-                window.location.href = `/screenshot/{{ file.id }}?t=${t}`;
+                // Use a temporary <a download> so the browser saves the file
+                // rather than navigating (endpoint now serves inline image/jpeg).
+                const a = document.createElement('a');
+                a.href = `/screenshot/${fileId}?t=${t}`;
+                a.download = `screenshot_${Math.floor(t)}s.jpg`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
             });
         });
     </script>

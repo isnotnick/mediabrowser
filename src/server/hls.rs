@@ -11,7 +11,7 @@ use tokio::fs;
 
 use crate::server::AppState;
 use crate::db::queries;
-use crate::processing::ffmpeg::find_ffmpeg;
+use crate::processing::ffmpeg::{find_ffmpeg, get_video_duration};
 use rusqlite::Connection;
 
 pub async fn master_playlist(
@@ -47,12 +47,39 @@ pub async fn hls_playlist(
     let hls_dir = Path::new(".app_data").join("hls").join(id.to_string());
     let _ = fs::create_dir_all(&hls_dir).await;
     
+    // We will serve a custom generated VOD playlist that has the full duration instantly.
+    // ffmpeg will write to ffmpeg.m3u8, but we won't serve it.
     let playlist_path = hls_dir.join("playlist.m3u8");
+    let ffmpeg_playlist_path = hls_dir.join("ffmpeg.m3u8");
     
-    // If playlist doesn't exist, start ffmpeg to generate the stream
     if !playlist_path.exists() {
-        let ffmpeg = find_ffmpeg().unwrap();
+        // Fetch duration
+        let duration = get_video_duration(&media.path).unwrap_or(0.0);
         
+        // Generate our static VOD playlist
+        let mut rewritten = String::new();
+        rewritten.push_str("#EXTM3U\n");
+        rewritten.push_str("#EXT-X-VERSION:3\n");
+        rewritten.push_str("#EXT-X-TARGETDURATION:10\n");
+        rewritten.push_str("#EXT-X-MEDIA-SEQUENCE:0\n");
+        rewritten.push_str("#EXT-X-PLAYLIST-TYPE:VOD\n");
+        
+        let segments = (duration / 10.0).ceil() as u32;
+        let mut remaining_duration = duration;
+        
+        for i in 0..segments {
+            let seg_duration = if remaining_duration >= 10.0 { 10.0 } else { remaining_duration };
+            remaining_duration -= 10.0;
+            
+            rewritten.push_str(&format!("#EXTINF:{:.6},\n", seg_duration));
+            rewritten.push_str(&format!("/hls/{}/segment_{:03}.ts\n", id, i));
+        }
+        rewritten.push_str("#EXT-X-ENDLIST\n");
+        
+        let _ = fs::write(&playlist_path, &rewritten).await;
+        
+        // Start ffmpeg in the background
+        let ffmpeg = find_ffmpeg().unwrap();
         let mut cmd = Command::new(ffmpeg);
         cmd.args([
             "-i", &media.path,
@@ -62,43 +89,20 @@ pub async fn hls_playlist(
             "-hls_time", "10",
             "-hls_list_size", "0",
             "-hls_playlist_type", "event",
-            // Use force_key_frames to ensure segments are split even if video lacks keyframes
             "-force_key_frames", "expr:gte(t,n_forced*10)",
             "-hls_segment_filename", hls_dir.join("segment_%03d.ts").to_str().unwrap(),
-            playlist_path.to_str().unwrap()
+            ffmpeg_playlist_path.to_str().unwrap()
         ]);
         
         cmd.stdout(Stdio::null())
            .stderr(Stdio::null());
            
-        // Start process in background
-        let child = cmd.spawn();
-        if child.is_err() {
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to start ffmpeg").into_response();
-        }
-        
-        // Wait a bit for the playlist to be generated
-        for _ in 0..20 {
-            if playlist_path.exists() {
-                break;
-            }
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        }
+        let _ = cmd.spawn();
     }
     
     match fs::read_to_string(&playlist_path).await {
         Ok(content) => {
-            // Rewrite segment paths in the playlist to point to our endpoint
-            let mut rewritten = String::new();
-            for line in content.lines() {
-                if line.starts_with("segment_") {
-                    rewritten.push_str(&format!("/hls/{}/{}\n", id, line));
-                } else {
-                    rewritten.push_str(line);
-                    rewritten.push('\n');
-                }
-            }
-            ([(header::CONTENT_TYPE, "application/vnd.apple.mpegurl")], rewritten).into_response()
+            ([(header::CONTENT_TYPE, "application/vnd.apple.mpegurl")], content).into_response()
         },
         Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Failed to read playlist").into_response(),
     }
@@ -108,12 +112,18 @@ pub async fn hls_segment(
     State(_state): State<Arc<AppState>>,
     AxumPath((id, segment)): AxumPath<(i64, String)>,
 ) -> impl IntoResponse {
-    let segment_path = Path::new(".app_data").join("hls").join(id.to_string()).join(segment);
+    let hls_dir = Path::new(".app_data").join("hls").join(id.to_string());
+    let segment_path = hls_dir.join(&segment);
+    let ffmpeg_playlist_path = hls_dir.join("ffmpeg.m3u8");
     
-    // Wait slightly if segment is not yet available but ffmpeg is running
-    for _ in 0..50 {
-        if segment_path.exists() {
-            break;
+    // Wait for the segment to be fully written by checking if ffmpeg has published it to its internal m3u8
+    for _ in 0..150 { // Wait up to 15 seconds for transcode to catch up
+        if let Ok(content) = fs::read_to_string(&ffmpeg_playlist_path).await {
+            // ffmpeg writes the segment to disk, then updates the m3u8 file.
+            // If the segment filename appears in the m3u8, it is completely written and safe to serve.
+            if content.contains(&segment) {
+                break;
+            }
         }
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     }
